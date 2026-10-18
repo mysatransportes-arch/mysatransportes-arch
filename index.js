@@ -207,18 +207,30 @@ async function startWhatsAppBot() {
       } else {
         console.log('⚠️ Usando respuesta local de contingencia.');
         if (isAdmin) {
-          replyText = `🚚 *¡Hola Meyrilin!* 👑\n\nRecibí tu mensaje: _"${text}"_.\nEl sistema de Mysa Transportes está 100% activo en el panel local (puerto 3050) y enlazado con n8n Cloud.`;
+          replyText = `🚚 *¡Hola Meyrilin!* 👑\n\nRecibí tu mensaje: _"${text}"_.\nEl sistema de Mysa Transportes está activo en el panel local (puerto 3050). Puedes usar los comandos directos:\n• *!agenda*: Enviar traslados a tu correo.\n• *!calendar*: Ver Google Calendar.\n• *!sheets*: Ver planilla en Sheets.\n• *!admin*: Reprogramar o cancelar.`;
         } else {
-          replyText = `🚚 *¡Hola ${senderName}! Bienvenido a MYSA TRANSPORTES*\n\nRecibimos tu mensaje. Para cotizaciones puedes indicarnos origen, destino, fecha y tipo de carga, o agendar de inmediato en nuestro formulario online:\n👉 https://mysatransportes.app.n8n.cloud/form/reserva-mysa`;
+          replyText = `🚚 *¡Hola ${senderName}! Bienvenido a MYSA TRANSPORTES*\n\nRecibimos tu solicitud de traslado en Chile 🇨🇱.\nPuedes agendar directamente tu día y hora libre en nuestro calendario corporativo:\n👉 https://mysatransportes.app.n8n.cloud/form/reserva-mysa\n\nO déjanos tu origen, destino y tipo de carga para coordinar tu viaje de inmediato.`;
         }
       }
 
       try {
         await sock.sendPresenceUpdate('paused', jid);
+      } catch (_) {}
+
+      try {
         await sock.sendMessage(jid, { text: replyText }, { quoted: msg });
         console.log(`✅ Respuesta enviada a WhatsApp exitosamente.`);
       } catch (err) {
-        console.error('Error enviando mensaje a WhatsApp:', err);
+        console.error('Error enviando mensaje a WhatsApp, reintentando...', err.message);
+        try {
+          await new Promise(r => setTimeout(r, 1500));
+          if (waSocket) {
+            await waSocket.sendMessage(jid, { text: replyText });
+            console.log(`✅ Respuesta enviada en reintento exitosamente.`);
+          }
+        } catch (retryErr) {
+          console.error('Error definitivo al enviar respuesta a WhatsApp:', retryErr.message);
+        }
       }
     }
   });
@@ -327,11 +339,22 @@ app.get('/api/workflow-info/:id', async (req, res) => {
   }
 });
 
-// Iniciar Servidor Web y WhatsApp Bot
-app.listen(PORT, () => {
+// Iniciar Servidor Web y WhatsApp Bot con protección Singleton
+const server = app.listen(PORT, () => {
   console.log(`\n===============================================================`);
   console.log(` 🚚 PANEL DE CONTROL MYSA TRANSPORTES INICIADO`);
   console.log(` 🌐 Accede desde tu navegador en: http://localhost:${PORT}`);
   console.log(`===============================================================\n`);
   startWhatsAppBot().catch(console.error);
+});
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.warn(`\n⚠️ [AVISO DE SEGURIDAD]: El puerto ${PORT} ya está en uso.`);
+    console.warn(`👉 Ya hay un proceso de MYSA TRANSPORTES corriendo activamente en este computador.`);
+    console.warn(`👉 Este proceso secundario se detendrá para evitar que se dupliquen las conexiones y se caiga WhatsApp.\n`);
+    process.exit(0);
+  } else {
+    console.error('Error en el servidor HTTP:', err);
+  }
 });
