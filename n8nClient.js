@@ -1,8 +1,11 @@
 // Cliente de integración con n8n MCP Server para MYSA TRANSPORTES
 
-const N8N_MCP_URL = 'https://mysatransportes.app.n8n.cloud/mcp-server/http';
-const N8N_BEARER_TOKEN = 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIzNzU4YWYwZC02NGFjLTRhYzEtODc0YS1mZWEzMjdhZDYzNjMiLCJpc3MiOiJuOG4iLCJqdGkiOiI0Y2ZmMTAwYi04OTdkLTRmZTAtODI1Mi02NWVlMjhmZjJhYjAiLCJpYXQiOjE3OTIzNDYzNjAsImF1ZCI6Im1jcC1zZXJ2ZXItYXBpIn0.iPx1ywtRijh0OLo94cAbxf20m2ThGu6_Wo92XTdzkco';
-const WORKFLOW_ID = 'QEvrTVlRY64sVT9U'; // "Mysa - Chatbot con memoria y registro en Sheets"
+import dotenv from 'dotenv';
+dotenv.config();
+
+const N8N_MCP_URL = process.env.N8N_MCP_URL;
+const N8N_BEARER_TOKEN = process.env.N8N_BEARER_TOKEN;
+const WORKFLOW_ID = process.env.N8N_MAIN_WORKFLOW_ID;
 
 let mcpSessionId = null;
 
@@ -45,6 +48,21 @@ async function getMcpHeaders() {
   return headers;
 }
 
+async function fetchWithRetry(url, options, retries = 3, backoff = 1500) {
+  try {
+    const response = await fetch(url, options);
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    return response;
+  } catch (error) {
+    if (retries > 0) {
+      console.warn(`[n8n] Error de conexión. Reintentando en ${backoff}ms... (${retries} reintentos restantes)`);
+      await new Promise(resolve => setTimeout(resolve, backoff));
+      return fetchWithRetry(url, options, retries - 1, backoff * 2);
+    }
+    throw error;
+  }
+}
+
 /**
  * Envía el mensaje del usuario al workflow de n8n y devuelve la respuesta del asistente AI.
  * @param {string} userMessage - Mensaje enviado por el cliente en WhatsApp
@@ -55,7 +73,6 @@ export async function askN8nWorkflow(userMessage, senderName = '', isAdmin = fal
   try {
     const headers = await getMcpHeaders();
 
-    // Formatear el prompt según el rol
     let promptToSend = userMessage;
     if (isAdmin) {
       promptToSend = `[ROL: MEYRILIN - JEFA Y ADMINISTRADORA DE MYSA TRANSPORTES]: "${userMessage}"\n(INSTRUCCIÓN OBLIGATORIA DEL SISTEMA: Estás conversando directamente con Meyrilin, la dueña y jefa general de Mysa Transportes en Chile. Trátala con respeto y profesionalismo como su copiloto y asistente de operaciones de alto nivel. NUNCA le hables como si fuera una clienta, NUNCA le pidas datos para cotizar un flete y NUNCA le ofrezcas que un ejecutivo la contacte, pues ella es la jefa. Asístela con cálculos de tarifas y costos por km en Chile, gestión de choferes, estado de reservas y administración de su flota).`;
@@ -63,8 +80,8 @@ export async function askN8nWorkflow(userMessage, senderName = '', isAdmin = fal
       promptToSend = `[CLIENTE: ${senderName}${clientPhone ? ' | Teléfono WhatsApp: +' + clientPhone : ''}]: "${userMessage}"\n(CONTEXTO OPERATIVO: Eres el asistente virtual de Mysa Transportes en Chile. Respondes con amabilidad, rapidez y claridad. Si el cliente consulta por fletes o traslados, pide origen, destino, fecha y tipo de carga. Si el cliente quiere agendar online por su cuenta, también puedes facilitarle el link de autoservicio: https://mysatransportes.app.n8n.cloud/form/reserva-mysa)`;
     }
 
-    // 1. Ejecutar el workflow a través del MCP de n8n
-    const execRes = await fetch(N8N_MCP_URL, {
+    // Usamos la nueva función de reintento inteligente
+    const execRes = await fetchWithRetry(N8N_MCP_URL, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -84,6 +101,7 @@ export async function askN8nWorkflow(userMessage, senderName = '', isAdmin = fal
         }
       })
     });
+
 
     const execTxt = await execRes.text();
     const execDataLine = execTxt.split('\n').find(l => l.startsWith('data: '));
@@ -197,5 +215,54 @@ export async function triggerAgendaWorkflow() {
     console.error('[n8n] Error ejecutando triggerAgendaWorkflow:', err.message);
     throw err;
   }
+}
+
+/**
+ * Calcula una cotización dinámica estimada basada en origen, destino y carga
+ */
+export async function getDynamicQuote(origen, destino, tipoCarga = 'General') {
+  const normOrig = (origen || '').toLowerCase();
+  const normDest = (destino || '').toLowerCase();
+
+  let basePrice = 25000;
+  let kmEst = 25;
+
+  if ((normOrig.includes('santiago') && normDest.includes('rancagua')) || (normOrig.includes('rancagua') && normDest.includes('santiago'))) {
+    kmEst = 85;
+    basePrice = 35000;
+  } else if ((normOrig.includes('santiago') && (normDest.includes('viña') || normDest.includes('valparaíso') || normDest.includes('valparaiso'))) ||
+             ((normOrig.includes('viña') || normOrig.includes('valparaíso')) && normDest.includes('santiago'))) {
+    kmEst = 120;
+    basePrice = 35000;
+  } else if (normOrig.includes('santiago') && normDest.includes('santiago')) {
+    kmEst = 25;
+    basePrice = 25000;
+  } else {
+    kmEst = 35;
+    basePrice = 30000;
+  }
+
+  const pricePerKm = 850;
+  let total = basePrice + (kmEst * pricePerKm);
+
+  const normCarga = (tipoCarga || '').toLowerCase();
+  let recargoTexto = '';
+  if (normCarga.includes('pesad') || normCarga.includes('palet') || normCarga.includes('pallet') || normCarga.includes('maquinaria')) {
+    total = Math.round(total * 1.25);
+    recargoTexto = ' (+25% por carga pesada)';
+  } else if (normCarga.includes('mudanza')) {
+    total = Math.round(total * 1.20);
+    recargoTexto = ' (+20% por servicio de mudanza)';
+  }
+
+  total = Math.round(total / 1000) * 1000;
+
+  return {
+    distanciaKm: kmEst,
+    precioBase: basePrice,
+    precioFinal: total,
+    moneda: 'CLP',
+    mensaje: `🚚 *Cotización Estimada:*\n📍 *Ruta:* ${origen} ➔ ${destino}\n📏 *Distancia aprox:* ~${kmEst} km\n💰 *Tarifa estimada:* $${total.toLocaleString('es-CL')} CLP${recargoTexto}\n\n_Esta tarifa es referencial y se confirma al agendar._`
+  };
 }
 

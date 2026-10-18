@@ -1,0 +1,42 @@
+# 📓 DIARIO DE DESARROLLO - SPRINT 01: ESTABILIZACIÓN Y COTIZACIÓN
+
+## 🗓️ Resumen del Sprint
+**Objetivo**: Transformar el bot de un repetidor de mensajes a un gestor de reservas profesional con seguridad robusta y cotización dinámica.
+
+### ✅ Logros Alcanzados
+- **Seguridad**: Migración de tokens a `.env`. El sistema ya no expone claves en el código fuente.
+- **Lógica de Conversación**: Implementación del `StateEngine`. El bot ahora guía al cliente paso a paso (`Origen` $\rightarrow$ `Destino` $\rightarrow$ `Cotización` $\rightarrow$ `Fecha` $\rightarrow$ `Carga`).
+- **Monitoreo**: Sistema de logs persistentes en `logs/app.log` para auditoría de errores.
+- **Cotización**: Integración con n8n para el cálculo de tarifas en tiempo real basadas en la tabla de precios de Sheets.
+- **Calidad**: Creación de `testSuite.js` para validar flujos de reserva sin necesidad de mensajes reales.
+
+---
+
+## 🛡️ Análisis de Casos Borde (Edge Cases) y Soluciones
+
+He simulado los siguientes escenarios para asegurar que el sistema no falle:
+
+| Escenario | Comportamiento Actual | Solución Implementada |
+| :--- | :--- | :--- |
+| **n8n caído o lento** | El bot podría quedar callado. | `fetchWithRetry` implementado. El bot reintenta 3 veces antes de informar el error. |
+| **Cliente envía datos vacíos** | n8n podría registrar filas vacías. | Validación en `StateEngine`. El bot no avanza al siguiente paso hasta recibir texto válido. |
+| **Respuesta de tarifa errónea** | El bot podría mostrar "NaN" o "Undefined". | Manejo de errores en `index.js`: si la cotización falla, el bot avisa que coordinarán el precio manualmente. |
+| **Meyrilin interrumpe flujo** | El bot podría tratar a la jefa como cliente. | Prioridad de Admin: Los comandos de Meyrilin (`!agenda`, etc.) saltan cualquier estado activo. |
+
+---
+
+## 📈 Estado de la Deuda Técnica
+
+| Item | Estado | Prioridad | Nota |
+| :--- | :---: | :---: | :--- |
+| Tokens en código | ✅ | Crítica | Resuelto mediante `.env`. |
+| Logs en memoria | ✅ | Alta | Resuelto mediante `logger.js` (Persistente). |
+| Dependencia de Sheets| ⏳ | Media | Pendiente migración a Supabase. |
+| Validación de Fechas | ⏳ | Media | Implementar validación de fechas reales (evitar 31 de febrero). |
+
+---
+
+## 🎯 Próximos Pasos (Sprint 02)
+1. **Migración a Supabase**: Implementar la base de datos profesional.
+2. **Cotizador Avanzado**: Integrar Google Maps API para distancias exactas en lugar de zonas.
+3. **Panel de Control Web v2**: Añadir visualización de los logs en tiempo real desde la interfaz.

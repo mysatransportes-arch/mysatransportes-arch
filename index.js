@@ -5,8 +5,11 @@ import { fileURLToPath } from 'url';
 import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import pino from 'pino';
-import { askN8nWorkflow, triggerAgendaWorkflow } from './n8nClient.js';
+import logger from './logger.js';
+import { askN8nWorkflow, triggerAgendaWorkflow, getDynamicQuote } from './n8nClient.js';
 import { processMediaMessage, getRecentMedia } from './mediaHandler.js';
+import { getState, setState, updateBookingData, getBookingQuestion, clearState, STATES } from './stateManager.js';
+import { supabase, saveBookingToDb } from './supabaseClient.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,6 +36,12 @@ function logActivity(text, type = 'info') {
   const timestamp = new Date().toLocaleTimeString();
   recentLogs.unshift({ timestamp, text, type });
   if (recentLogs.length > 50) recentLogs.pop();
+
+  // Log persistente en archivo
+  if (type === 'error') logger.error(text);
+  else if (type === 'warn') logger.warn(text);
+  else if (type === 'success') logger.info(`✅ ${text}`);
+  else logger.info(text);
 }
 
 // Iniciar Cliente de WhatsApp Baileys
@@ -132,12 +141,13 @@ async function startWhatsAppBot() {
 
       if (!text) continue;
 
+      const userState = getState(jid);
+
       if (isAdmin) {
-        activeAdminJid = jid; // Guardar JID activo de Meyrilin para respuestas y alertas
+        activeAdminJid = jid;
         console.log(`\n👑 [MENSAJE DE MEYRILIN - JEFA DE MYSA TRANSPORTES] (${jid}): "${text}"`);
         logActivity(`👑 Mensaje de Meyrilin (Admin): "${text}"`, 'warn');
 
-        // Atajos y Comandos inmediatos para la Jefa
         const cleanLower = text.trim().toLowerCase();
         if (cleanLower === '!agenda' || cleanLower === 'agenda') {
           await sock.sendMessage(jid, { text: `🚚 *Generando agenda de Mysa Transportes...* ⏳\nConsultando traslados con Google Sheets y Google Calendar...` }, { quoted: msg });
@@ -179,6 +189,51 @@ async function startWhatsAppBot() {
         logActivity(`Mensaje de ${senderName}: "${text}"`, 'info');
       }
 
+      // --- Lógica de State Engine ---
+      if (userState.state === STATES.BOOKING) {
+        const cancelKeywords = ['cancelar', 'salir', 'reiniciar', 'abortar', 'volver', 'no quiero', 'parar'];
+        if (cancelKeywords.some(kw => cleanLower.includes(kw))) {
+          clearState(jid);
+          await sock.sendMessage(jid, { text: '❌ *Proceso de reserva cancelado.*\n\nSi necesitas realizar una consulta o cotizar más adelante, escríbeme cuando quieras.' }, { quoted: msg });
+          return;
+        }
+
+        const update = updateBookingData(jid, text);
+        if (update.isComplete) {
+          // El formulario está completo, calculamos cotización final con recargo si aplica
+          const quote = await getDynamicQuote(update.newData.origen, update.newData.destino, update.newData.carga);
+
+          console.log(`✅ Datos de reserva completos para ${senderName}. Registrando...`);
+          // Escritura dual en Supabase si está disponible
+          await saveBookingToDb({
+            origen: update.newData.origen,
+            destino: update.newData.destino,
+            fecha_traslado: update.newData.fecha,
+            tipo_carga: update.newData.carga,
+            precio_cotizado: quote.precioFinal,
+            estado_viaje: 'Pendiente'
+          });
+
+          const finalPrompt = `SISTEMA_RESERVA_COMPLETA: El cliente ${senderName} (+${cleanJid}) ha completado los datos de reserva:\nOrigen: ${update.newData.origen}\nDestino: ${update.newData.destino}\nFecha: ${update.newData.fecha}\nCarga: ${update.newData.carga}\nTarifa Estimada: $${quote.precioFinal} CLP\nPor favor, regístralo en Sheets y Calendar y confirma al cliente.`;
+          const n8nResult = await askN8nWorkflow(finalPrompt, senderName, false, cleanJid);
+
+          let replyText = n8nResult ? (typeof n8nResult === 'string' ? n8nResult : (n8nResult.text || '')) : `🎉 *¡Excelente! Tus datos han sido registrados con éxito.*\n\n📋 *Resumen de tu traslado:*\n• *Origen:* ${update.newData.origen}\n• *Destino:* ${update.newData.destino}\n• *Fecha/Hora:* ${update.newData.fecha}\n• *Carga:* ${update.newData.carga}\n• *Tarifa estimada:* $${quote.precioFinal.toLocaleString('es-CL')} CLP\n\nNuestra administradora Meyrilin revisará tu reserva y te contactará a la brevedad para coordinar los detalles. ¡Gracias por confiar en MYSA TRANSPORTES! 🚚`;
+
+          clearState(jid); // Volvemos a IDLE
+          await sock.sendMessage(jid, { text: replyText }, { quoted: msg });
+          return;
+        } else {
+          // Si el paso que acaba de responder es "destino", calculamos la tarifa dinámica intermedia
+          let nextQuestion = getBookingQuestion(update.nextStep);
+          if (update.field === 'destino') {
+            const quote = await getDynamicQuote(update.newData.origen, update.newData.destino);
+            nextQuestion = `${quote.mensaje}\n\n${nextQuestion}`;
+          }
+          await sock.sendMessage(jid, { text: nextQuestion }, { quoted: msg });
+          return;
+        }
+      }
+
       try {
         await sock.sendPresenceUpdate('composing', jid);
       } catch (_) {}
@@ -192,7 +247,16 @@ async function startWhatsAppBot() {
         console.log(`🤖 Respuesta obtenida de n8n (registrada en Sheets).`);
         logActivity(`Respuesta enviada a ${senderName}`, 'success');
 
-        // Notificación automática instantánea a Meyrilin si se generó una reserva
+        // Activar State Engine si el cliente muestra clara intención de cotizar o reservar
+        const bookingKeywords = ['flete', 'reserva', 'reservar', 'traslado', 'cotiz', 'viaje', 'mudanza', 'camion', 'precio'];
+        const hasBookingIntent = bookingKeywords.some(k => cleanLower.includes(k));
+        const aiSuggestedBooking = replyText.toLowerCase().includes('origen') && replyText.toLowerCase().includes('destino');
+
+        if (!isAdmin && (hasBookingIntent || aiSuggestedBooking)) {
+            setState(jid, STATES.BOOKING, 0, {});
+            replyText += `\n\n👉 *Vamos a tomar tus datos paso a paso para agendarlo de inmediato:*\n\n${getBookingQuestion(0)}`;
+        }
+
         if (n8nResult.booking && !isAdmin) {
           const b = n8nResult.booking;
           const adminAlert = `🚨 *¡NUEVA RESERVA GENERADA EN WHATSAPP!* 🚚\n\n• *Cliente:* ${senderName} (+${cleanJid})\n• *Origen:* ${b.origen || 'No especificado'}\n• *Destino:* ${b.destino || 'No especificado'}\n• *Fecha:* ${b.fecha_traslado || 'A coordinar'}\n• *Hora:* ${b.hora_traslado || 'A coordinar'}\n• *Tipo de carga:* ${b.tipo_carga || 'General'}\n• *ID Reserva:* ${b.id_reserva || 'Nueva'}\n\n_Puedes revisarla en la planilla o en tu panel web: http://localhost:3050_`;
@@ -212,6 +276,7 @@ async function startWhatsAppBot() {
           replyText = `🚚 *¡Hola ${senderName}! Bienvenido a MYSA TRANSPORTES*\n\nRecibimos tu solicitud de traslado en Chile 🇨🇱.\nPuedes agendar directamente tu día y hora libre en nuestro calendario corporativo:\n👉 https://mysatransportes.app.n8n.cloud/form/reserva-mysa\n\nO déjanos tu origen, destino y tipo de carga para coordinar tu viaje de inmediato.`;
         }
       }
+
 
       try {
         await sock.sendPresenceUpdate('paused', jid);
@@ -251,7 +316,75 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+app.get('/api/reservas-pendientes', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('reservas')
+      .select('*, clientes(nombre)')
+      .eq('estado_viaje', 'Pendiente');
+    if (error) throw error;
+    res.json({ reservas: data || [] });
+  } catch (err) {
+    res.json({ reservas: [], error: err.message });
+  }
+});
+
+app.get('/api/choferes', async (req, res) => {
+  try {
+    const { data, error } = await supabase.from('choferes').select('*');
+    if (error) throw error;
+    res.json({ choferes: data || [] });
+  } catch (err) {
+    res.json({ choferes: [], error: err.message });
+  }
+});
+
+app.post('/api/run-tests', async (req, res) => {
+  try {
+    const { runTests } = await import('./testSuite.js');
+    const success = await runTests();
+    res.json({ success });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/asignar-chofer', async (req, res) => {
+  const { reservaId, choferId } = req.body;
+  if (!reservaId || !choferId) return res.status(400).json({ error: 'Faltan parámetros' });
+
+  try {
+    // 1. Actualizar reserva en Supabase
+    const { data, error } = await supabase
+      .from('reservas')
+      .update({ chofer_id: choferId, estado_viaje: 'Asignado' })
+      .eq('id', reservaId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // 2. Obtener datos del chofer y la reserva para la notificación
+    const { data: chofer } = await supabase.from('choferes').select('*').eq('id', choferId).single();
+
+    // 3. Enviar notificación automática al chofer vía WhatsApp
+    if (waSocket && isConnected && chofer?.telefono) {
+      let cleanTo = chofer.telefono.replace(/[^0-9]/g, '');
+      if (!cleanTo.endsWith('@s.whatsapp.net')) cleanTo += '@s.whatsapp.net';
+
+      const msgChofer = `🚚 *NUEVO VIAJE ASIGNADO*\n\nHola ${chofer.nombre}, tienes un nuevo flete asignado:\n\n📍 **Origen**: ${data.origen}\n📍 **Destino**: ${data.destino}\n📅 **Fecha**: ${data.fecha_traslado}\n⏰ **Hora**: ${data.hora_traslado}\n\n_Por favor, confirma la recepción de este viaje respondiendo a este mensaje._`;
+      await waSocket.sendMessage(cleanTo, { text: msgChofer });
+      logActivity(`Notificación de viaje enviada al chofer ${chofer.nombre}`, 'success');
+    }
+
+    res.json({ success: true, message: 'Chofer asignado y notificado correctamente.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/media', (req, res) => {
+
   res.json({ media: getRecentMedia() });
 });
 
