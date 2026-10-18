@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MYSA TRANSPORTES - Centro de Control y Automatización</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo-group">
+        <div class="logo-icon">🚚</div>
+        <div>
+          <h1 class="logo-title">MYSA TRANSPORTES</h1>
+          <p class="logo-subtitle">Centro de Control de Operaciones y Flujos n8n + WhatsApp</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="status-pill online" id="global-status-pill">
+          <span class="pulse-dot"></span>
+          <span id="global-status-text">Sistemas Operativos</span>
+        </div>
+        <a href="https://calendar.google.com/calendar/r" target="_blank" class="btn-header">
+          📅 Google Calendar
+        </a>
+        <a href="https://docs.google.com/spreadsheets/d/17HI5dCua1GJfm2ZATpGAfk2BSmdNVfEse7CPws-7dqA/edit" target="_blank" class="btn-header">
+          📊 Abrir Google Sheets
+        </a>
+        <a href="https://mysatransportes.app.n8n.cloud/form/reserva-mysa" target="_blank" class="btn-header accent">
+          📝 Formulario Reservas
+        </a>
+      </div>
+    </header>
+
+    <!-- System Metrics / Quick Status -->
+    <section class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-icon whatsapp">📱</div>
+        <div class="metric-info">
+          <span class="metric-label">WhatsApp Baileys</span>
+          <h3 class="metric-value" id="wa-status-text">Conectando...</h3>
+          <span class="metric-sub" id="wa-sub-text">Sesión activa</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-icon n8n">⚡</div>
+        <div class="metric-info">
+          <span class="metric-label">n8n Cloud MCP</span>
+          <h3 class="metric-value" id="n8n-status-text">Conectado</h3>
+          <span class="metric-sub">mysatransportes.app.n8n.cloud</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-icon sheets">📑</div>
+        <div class="metric-info">
+          <span class="metric-label">Base de Datos</span>
+          <h3 class="metric-value">Google Sheets</h3>
+          <span class="metric-sub">Pestaña 'Reservas' + 'Hoja 1'</span>
+        </div>
+      </div>
+
+      <div class="metric-card">
+        <div class="metric-icon gemini">✨</div>
+        <div class="metric-info">
+          <span class="metric-label">IA Conversacional</span>
+          <h3 class="metric-value">Google Gemini</h3>
+          <span class="metric-sub">Memoria buffer (10 turnos)</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Executive Quick Actions Bar -->
+    <section class="sim-card" style="margin-bottom: 1.5rem; background: linear-gradient(135deg, rgba(16, 26, 44, 0.95), rgba(10, 15, 28, 0.95)); border: 1px solid rgba(0, 229, 255, 0.35); box-shadow: 0 10px 30px rgba(0,0,0,0.4);">
+      <div class="section-header" style="margin-bottom: 0.8rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem;">
+        <div>
+          <h3 style="color: var(--accent-cyan); font-size: 1.15rem; display: flex; align-items: center; gap: 0.5rem; margin: 0;">
+            <span>👑</span> Suite Empresarial para Meyrilin (Jefa de Operaciones)
+          </h3>
+          <p class="hint-text" style="margin: 0.2rem 0 0 0;">Acceso directo de 1 clic a toda la suite logística corporativa de Mysa Transportes:</p>
+        </div>
+        <button class="btn-primary" onclick="triggerDailyAgenda()" id="btn-trigger-agenda" style="background: linear-gradient(135deg, #00e5ff, #0077ff); font-size: 0.82rem; padding: 0.5rem 1rem;">
+          📧 Enviar Agenda de Mañana a mi Correo
+        </button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 0.8rem; margin-top: 0.8rem;">
+        <a href="https://calendar.google.com/calendar/r" target="_blank" class="btn-header" style="justify-content: center; background: rgba(66, 133, 244, 0.15); border-color: rgba(66, 133, 244, 0.4); color: #fff;">
+          📅 Google Calendar Sincronizado ↗
+        </a>
+        <a href="https://docs.google.com/spreadsheets/d/17HI5dCua1GJfm2ZATpGAfk2BSmdNVfEse7CPws-7dqA/edit" target="_blank" class="btn-header" style="justify-content: center; background: rgba(52, 168, 83, 0.15); border-color: rgba(52, 168, 83, 0.4); color: #fff;">
+          📊 Planilla de Reservas (Sheets) ↗
+        </a>
+        <a href="https://mysatransportes.app.n8n.cloud/form/reserva-mysa" target="_blank" class="btn-header accent" style="justify-content: center;">
+          📝 Formulario Web Clientes ↗
+        </a>
+        <a href="https://mysatransportes.app.n8n.cloud/form/panel-reservas-mysa" target="_blank" class="btn-header" style="justify-content: center; background: rgba(255, 171, 0, 0.15); border-color: rgba(255, 171, 0, 0.4); color: #fff;">
+          🛠️ Panel de Gestión de Reservas ↗
+        </a>
+      </div>
+      <div id="agenda-feedback" style="margin-top: 0.7rem; font-size: 0.85rem; font-weight: 600;"></div>
+    </section>
+
+    <!-- Main Workspace: 2 Columns -->
+    <div class="dashboard-body">
+      <!-- Left Column: Workflows Matrix & Management -->
+      <section class="panel-section">
+        <div class="section-header">
+          <h2>🗂️ Workflows del Sistema de Transporte (n8n)</h2>
+          <span class="badge">6 Workflows</span>
+        </div>
+
+        <div class="workflows-list" id="workflows-container">
+          <!-- Workflow 1 -->
+          <div class="wf-card">
+            <div class="wf-status active"></div>
+            <div class="wf-content">
+              <div class="wf-top">
+                <span class="wf-badge">Base de Datos</span>
+                <span class="wf-id">UmCjSgjZk0oU8iDR</span>
+              </div>
+              <h4 class="wf-name">1. Crear pestaña Reservas (una vez)</h4>
+              <p class="wf-desc">Crea y configura las 14 columnas de reservas en tu planilla de cálculo.</p>
+              <div class="wf-footer">
+                <span class="wf-check">✅ Pestaña Creada</span>
+                <button class="btn-sm" onclick="runWorkflowTest('UmCjSgjZk0oU8iDR')">Verificar</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Workflow 2 -->
+          <div class="wf-card primary">
+            <div class="wf-status active"></div>
+            <div class="wf-content">
+              <div class="wf-top">
+                <span class="wf-badge highlight">Atención al Cliente</span>
+                <span class="wf-id">QEvrTVlRY64sVT9U</span>
+              </div>
+              <h4 class="wf-name">2. Chatbot con Memoria (WhatsApp)</h4>
+              <p class="wf-desc">Atiende por WhatsApp, revisa disponibilidad, cotiza fletes y registra en Sheets.</p>
+              <div class="wf-footer">
+                <span class="wf-check">⚡ Enlazado con WhatsApp</span>
+                <button class="btn-sm" onclick="testChatPrompt('Hola, necesito cotizar un viaje de Santiago a Rancagua')">Probar Chat</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Workflow 3 -->
+          <div class="wf-card">
+            <div class="wf-status active"></div>
+            <div class="wf-content">
+              <div class="wf-top">
+                <span class="wf-badge">Web Form</span>
+                <span class="wf-id">eHpAwlBhtnNoTVZC</span>
+              </div>
+              <h4 class="wf-name">3. Formulario Web de Reserva</h4>
+              <p class="wf-desc">Agenda automática con Google Calendar, validación de horario libre y emails.</p>
+              <div class="wf-footer">
+                <a href="https://mysatransportes.app.n8n.cloud/form/reserva-mysa" target="_blank" class="link-action">Abrir Formulario ↗</a>
+                <button class="btn-sm" onclick="runWorkflowDetails('eHpAwlBhtnNoTVZC')">Ver Nodos</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Workflow 4 -->
+          <div class="wf-card">
+            <div class="wf-status active"></div>
+            <div class="wf-content">
+              <div class="wf-top">
+                <span class="wf-badge">Cron Job</span>
+                <span class="wf-id">cvVkZ6C0DNzvrB9t</span>
+              </div>
+              <h4 class="wf-name">4. Recordatorio Diario y Agenda (18:00)</h4>
+              <p class="wf-desc">Envía recordatorios automáticos con enlaces de confirmación a los clientes del día siguiente.</p>
+              <div class="wf-footer">
+                <span class="wf-check">⏰ Programado 18:00 hrs</span>
+                <button class="btn-sm" onclick="runWorkflowDetails('cvVkZ6C0DNzvrB9t')">Inspeccionar</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Workflow 5 -->
+          <div class="wf-card">
+            <div class="wf-status active"></div>
+            <div class="wf-content">
+              <div class="wf-top">
+                <span class="wf-badge">Webhook</span>
+                <span class="wf-id">x0d2yyxNw65KbwEb</span>
+              </div>
+              <h4 class="wf-name">5. Confirmar o Cancelar desde el Link</h4>
+              <p class="wf-desc">Recibe el clic del cliente desde su correo/WhatsApp y actualiza el estado en Sheets y Calendar.</p>
+              <div class="wf-footer">
+                <span class="wf-check">🔗 Webhook Listo</span>
+                <button class="btn-sm" onclick="runWorkflowDetails('x0d2yyxNw65KbwEb')">Detalles</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Workflow 6 -->
+          <div class="wf-card">
+            <div class="wf-status active"></div>
+            <div class="wf-content">
+              <div class="wf-top">
+                <span class="wf-badge">Gestión</span>
+                <span class="wf-id">zsqk4HXfcdCiBeMu</span>
+              </div>
+              <h4 class="wf-name">6. Panel de Administración</h4>
+              <p class="wf-desc">Formulario administrativo para completar, cancelar o reprogramar traslados.</p>
+              <div class="wf-footer">
+                <span class="wf-check">🛠️ Modo Gestión</span>
+                <button class="btn-sm" onclick="runWorkflowDetails('zsqk4HXfcdCiBeMu')">Ver Configuración</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Interactive Simulator & Message Sender -->
+      <section class="panel-section">
+        <!-- Interactive Chat Simulator -->
+        <div class="sim-card">
+          <div class="section-header">
+            <h3>💬 Simulador de IA (Mysa Transportes)</h3>
+            <span class="pill-mini">Gemini Live</span>
+          </div>
+          <p class="hint-text">Envía un mensaje para probar en vivo la respuesta del workflow y verificar que se guarde en Sheets:</p>
+          
+          <div class="chat-box" id="chat-messages">
+            <div class="chat-msg bot">
+              <div class="bubble">
+                🚚 <strong>Asistente Mysa Transportes:</strong> ¡Hola! Bienvenido a Mysa Transportes. ¿En qué te podemos ayudar hoy con tus fletes o traslados?
+              </div>
+            </div>
+          </div>
+
+          <form id="chat-form" class="chat-input-row" onsubmit="handleSendChat(event)">
+            <select id="chat-role" style="background: rgba(10, 13, 20, 0.9); color: var(--accent-cyan); border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-size: 0.78rem; font-weight: 600; padding: 0.4rem 0.6rem; outline: none;">
+              <option value="admin">👑 Meyrilin (Admin)</option>
+              <option value="client">👤 Cliente</option>
+            </select>
+            <input type="text" id="chat-input" placeholder="Escribe tu mensaje..." required>
+            <button type="submit" id="btn-chat-send" class="btn-primary">Enviar</button>
+          </form>
+        </div>
+
+        <!-- WhatsApp Quick Messenger -->
+        <div class="sim-card" style="margin-top: 1.5rem;">
+          <div class="section-header">
+            <h3>📲 Enviar WhatsApp a un Cliente</h3>
+            <span class="pill-mini">Baileys Outbox</span>
+          </div>
+          <p class="hint-text">Envía un mensaje o cotización directa a cualquier número desde tu línea vinculada:</p>
+          
+          <form id="wa-send-form" onsubmit="handleSendWhatsApp(event)">
+            <div class="input-group">
+              <label>Número de WhatsApp (con código de país, ej. +569...):</label>
+              <input type="text" id="wa-dest" placeholder="56912345678" required>
+            </div>
+            <div class="input-group">
+              <label>Mensaje a enviar:</label>
+              <textarea id="wa-msg" rows="3" placeholder="Estimado cliente, su traslado ha sido programado con éxito..." required></textarea>
+            </div>
+            <button type="submit" id="btn-wa-send" class="btn-primary">Enviar Mensaje</button>
+            <span id="wa-send-feedback" class="feedback-text"></span>
+          </form>
+        </div>
+
+        <!-- Media Center (Audios & Images) -->
+        <div class="sim-card" style="margin-top: 1.5rem;">
+          <div class="section-header">
+            <h3>🎙️ Centro Multimedia (Audios y Fotos)</h3>
+            <button class="btn-xs" onclick="fetchMedia()">Actualizar</button>
+          </div>
+          <p class="hint-text">Notas de voz y fotos recibidas de clientes o de Meyrilin:</p>
+          <div id="media-gallery" class="media-container">
+            <p class="empty-hint">Aún no se han recibido archivos multimedia.</p>
+          </div>
+        </div>
+
+        <!-- Real-time Activity Logs -->
+        <div class="sim-card" style="margin-top: 1.5rem;">
+          <div class="section-header">
+            <h3>📜 Registro de Actividad en Tiempo Real</h3>
+            <button class="btn-xs" onclick="fetchRecentLogs()">Refrescar</button>
+          </div>
+          <div class="console-box" id="console-logs">
+            <div class="log-line info">[Sistema] Centro de control Mysa Transportes listo.</div>
+            <div class="log-line success">[n8n] Servidor MCP autenticado con éxito.</div>
+            <div class="log-line success">[Google Sheets] Pestaña 'Reservas' verificada.</div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
